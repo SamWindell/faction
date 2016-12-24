@@ -1,28 +1,48 @@
 
-#include "SDL.h"
-#include <stdio.h>
+#include "gl_lite.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include "faction_platform.h"
 
-int main(int argc, char *argv[]) {
-    SDL_Init(SDL_INIT_VIDEO);
+struct Image {
+	int width = 0;
+	int height = 0;
+	int bytesPerPx = 0;
+	unsigned char *data = NULL;
+};
 
-    SDL_Window *window = SDL_CreateWindow("An SDL2 window", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 
-                                          640, 480, SDL_WINDOW_OPENGL);
-    if (window == NULL) {
-        printf("Could not create window: %s\n", SDL_GetError());
-        return 1;
-    }
+struct Faction {
+	Image terrainImg;
+};
+Faction faction; // global for now
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-
-    while (1) {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-        }
-        glViewport(0, 0, 10, 10);
-    }
-
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return 0;
+void FactionMain() {
+	faction.terrainImg.data = stbi_load("../resources/terrain.png", &faction.terrainImg.width, 
+	                                    &faction.terrainImg.height, &faction.terrainImg.bytesPerPx, 0);
+	if (faction.terrainImg.data == NULL) {
+		PlatformDMG("ERROR loading terrain image\n");
+		// stbi_image_free(faction.terrainImg.data);		
+	}
 }
+
+void RenderFrame() {
+    glViewport(0, 0, 800, 600);
+    glClearColor(1.0, 1.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+	// Create one OpenGL texture
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+
+	// "Bind" the newly created texture : all future texture functions will modify this texture
+	glBindTexture(GL_TEXTURE_2D, textureID);
+
+	// Give the image to OpenGL
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, faction.terrainImg.width, faction.terrainImg.height, 
+	             0, GL_BGR, GL_UNSIGNED_BYTE, faction.terrainImg.data);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);   
+}
+
+
