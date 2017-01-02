@@ -13,4 +13,4 @@ struct UserInput {
 };
 
 void FactionMain();
-void RenderFrame(Vec2 windowSize, UserInput *userInput);
+void GameRenderAndUpdate(float windowWidth, float windowSize, UserInput *userInput);

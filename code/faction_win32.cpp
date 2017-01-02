@@ -128,29 +128,26 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
 
             RECT clientRect;
             GetClientRect(win32Layer.window, &clientRect);
-            Vec2 windowSize;
-            windowSize.x = (float)clientRect.right;
-            windowSize.y = (float)clientRect.bottom;
 
-            RenderFrame(windowSize, &win32Layer.userInput); // right and bottom is actually the window size
+            GameRenderAndUpdate((float)clientRect.right, (float)clientRect.bottom, &win32Layer.userInput); // right and bottom is actually the window size
             SwapBuffers(win32Layer.deviceContext);
-            int framesPerSec = 30;
-            Sleep((int)((1000.f / framesPerSec) * 100.f)); // TODO: make a more robust system for timing
+            float framesPerSec = 30.0f;
+            Sleep((int)(1000.0f / framesPerSec)); // TODO: make a more robust system for timing
         }
     }
 
     return 0;
 }
 
-std::string PlatformGetExeDir() { // don't actaully need this function yet...
-    TCHAR filePath[MAX_PATH];
-    GetModuleFileName(NULL, filePath, MAX_PATH);
-    std::string fullExe(filePath);
-    std::string result = fullExe.substr(0, fullExe.find_last_of('\\')+1);
-    std::replace(result.begin(), result.end(), '\\', '/');
-    return result;
-}
+// std::string PlatformGetExeDir() { // don't actaully need this function yet...
+//     TCHAR filePath[MAX_PATH];
+//     GetModuleFileName(NULL, filePath, MAX_PATH);
+//     std::string fullExe(filePath);
+//     std::string result = fullExe.substr(0, fullExe.find_last_of('\\')+1);
+//     std::replace(result.begin(), result.end(), '\\', '/');
+//     return result;
+// }
 
-void PlatformDBG(const char *msg) {
-    OutputDebugStringA(msg);
-}
+// void PlatformDBG(const char *msg) {
+//     OutputDebugStringA(msg);
+// }
