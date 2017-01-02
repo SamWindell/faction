@@ -59,6 +59,11 @@
 #define GL_TEXTURE0                       0x84C0
 #define GL_VERTEX_SHADER                  0x8B31
 #define GL_BGR                            0x80E0
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_TEXTURE0 0x84C0
+#define GL_TEXTURE1 0x84C1
+#define GL_TEXTURE2 0x84C2
+#define GL_TEXTURE3 0x84C3
 
 
 typedef char GLchar;
@@ -81,6 +86,8 @@ typedef ptrdiff_t GLsizeiptr;
     GLE(void,      AttachShader,            GLuint program, GLuint shader) \
     GLE(void,      BindBuffer,              GLenum target, GLuint buffer) \
     GLE(void,      BindFramebuffer,         GLenum target, GLuint framebuffer) \
+    GLE(void,      BindVertexArray,         GLuint array) \
+    GLE(void,      BindFragDataLocation,    GLuint program, GLuint colorNumber, const char * name) \
     GLE(void,      BufferData,              GLenum target, GLsizeiptr size, const GLvoid *data, GLenum usage) \
     GLE(void,      BufferSubData,           GLenum target, GLintptr offset, GLsizeiptr size, const GLvoid * data) \
     GLE(GLenum,    CheckFramebufferStatus,  GLenum target) \
@@ -94,6 +101,7 @@ typedef ptrdiff_t GLsizeiptr;
     GLE(void,      DrawBuffers,             GLsizei n, const GLenum *bufs) \
     GLE(void,      FramebufferTexture2D,    GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) \
     GLE(void,      GenBuffers,              GLsizei n, GLuint *buffers) \
+    GLE(void,      GenVertexArrays,         GLsizei n, GLuint *arrays) \
     GLE(void,      GenFramebuffers,         GLsizei n, GLuint * framebuffers) \
     GLE(GLint,     GetAttribLocation,       GLuint program, const GLchar *name) \
     GLE(void,      GetShaderInfoLog,        GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *infoLog) \

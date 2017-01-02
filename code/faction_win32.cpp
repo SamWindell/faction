@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <windows.h>
+#include <Windowsx.h>
 #include <algorithm>
 
 #include "faction_platform.h"
@@ -13,6 +14,7 @@ struct FactionWin32Layer {
     HWND window;
     HDC deviceContext;
     HGLRC renderingContext;
+    UserInput userInput;
 };
 
 LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -24,36 +26,64 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
         SetWindowLongPtr(window, GWL_USERDATA, (LPARAM)(lpcs->lpCreateParams));
         FactionWin32Layer *win32Layer = (FactionWin32Layer *)GetWindowLongPtr(window, GWL_USERDATA);
 
-        // init openGL
-        win32Layer->deviceContext = GetDC(window);
-        if (win32Layer->deviceContext == NULL) {
-            OutputDebugStringA("ERROR: Failed getting the device context\n");
-        }
+        { // init openGL
+            win32Layer->deviceContext = GetDC(window);
+            if (win32Layer->deviceContext == NULL) {
+                OutputDebugStringA("ERROR: Failed getting the device context\n");
+            }
 
-        PIXELFORMATDESCRIPTOR pixelFormatDesc = {};
-        pixelFormatDesc.nSize = sizeof(PIXELFORMATDESCRIPTOR);
-        pixelFormatDesc.nVersion = 1;
-        pixelFormatDesc.dwFlags = PFD_SUPPORT_OPENGL | PFD_DRAW_TO_WINDOW | PFD_DOUBLEBUFFER;
-        pixelFormatDesc.iPixelType = PFD_TYPE_RGBA;
-        pixelFormatDesc.cColorBits = 32;
-        pixelFormatDesc.cDepthBits = 32;
-        pixelFormatDesc.dwLayerMask = PFD_MAIN_PLANE;
-        int pixelFormat = ChoosePixelFormat(win32Layer->deviceContext, &pixelFormatDesc);
-        SetPixelFormat(win32Layer->deviceContext, pixelFormat, &pixelFormatDesc);
+            PIXELFORMATDESCRIPTOR pixelFormatDesc = {};
+            pixelFormatDesc.nSize = sizeof(PIXELFORMATDESCRIPTOR);
+            pixelFormatDesc.nVersion = 1;
+            pixelFormatDesc.dwFlags = PFD_SUPPORT_OPENGL | PFD_DRAW_TO_WINDOW | PFD_DOUBLEBUFFER;
+            pixelFormatDesc.iPixelType = PFD_TYPE_RGBA;
+            pixelFormatDesc.cColorBits = 32;
+            pixelFormatDesc.cDepthBits = 32;
+            pixelFormatDesc.dwLayerMask = PFD_MAIN_PLANE;
+            int pixelFormat = ChoosePixelFormat(win32Layer->deviceContext, &pixelFormatDesc);
+            SetPixelFormat(win32Layer->deviceContext, pixelFormat, &pixelFormatDesc);
 
-        win32Layer->renderingContext = wglCreateContext(win32Layer->deviceContext);
-        if (win32Layer->renderingContext == NULL) {
-            OutputDebugStringA("ERROR: Failed creating a rendering context\n");                
+            win32Layer->renderingContext = wglCreateContext(win32Layer->deviceContext);
+            if (win32Layer->renderingContext == NULL) {
+                OutputDebugStringA("ERROR: Failed creating a rendering context\n");                
+            }
+            wglMakeCurrent(win32Layer->deviceContext, win32Layer->renderingContext);
+            gl_lite_init(); // init the function pointers because opengl is not neces6sarily included with windows
         }
-        wglMakeCurrent(win32Layer->deviceContext, win32Layer->renderingContext);
-        gl_lite_init(); // init the function pointers because opengl is not necessarily included with windows
         return 0;
     }
+
+    FactionWin32Layer *win32Layer = (FactionWin32Layer *)GetWindowLongPtr(window, GWL_USERDATA);
+    if (win32Layer == NULL) {
+        return DefWindowProcA(window, message, wParam, lParam);
+    }
+    win32Layer->userInput.scroll = 0;
 
     LRESULT result = 0;
     switch (message) {
         case WM_MOUSEMOVE: {
+            win32Layer->userInput.cursorPos.x = (float)((lParam << 16) >> 16);
+            win32Layer->userInput.cursorPos.y = (float)(lParam >> 16);
             return 1;
+        }
+        case WM_MOUSEWHEEL: {
+			auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
+            win32Layer->userInput.scroll = (int)zDelta;
+            return 1;
+        }
+        case WM_LBUTTONDOWN: { win32Layer->userInput.mouseState[1] = 1; return 1; }
+        case WM_LBUTTONUP:   { win32Layer->userInput.mouseState[1] = 0; return 1; }
+        case WM_RBUTTONDOWN: { win32Layer->userInput.mouseState[1] = 1; return 1; }
+        case WM_RBUTTONUP:   { win32Layer->userInput.mouseState[1] = 0; return 1; }
+        case WM_MBUTTONDOWN: { win32Layer->userInput.mouseState[2] = 1; return 1; }
+        case WM_MBUTTONUP:   { win32Layer->userInput.mouseState[2] = 0; return 1; }
+        case WM_DESTROY: {
+            PostQuitMessage(0);
+            return 0;
+        }
+        case WM_CLOSE: {
+            PostQuitMessage(0);
+            return 0;
         }
 
         default: {
@@ -67,7 +97,6 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCode) {
     FactionWin32Layer win32Layer = {};
-    FactionMain();
 
     { // create and show window
         WNDCLASSA wc = {};
@@ -75,6 +104,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
         wc.hInstance = instance;
         wc.lpszClassName = "FactionWindowClass";
         wc.style = CS_HREDRAW | CS_VREDRAW;
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
         RegisterClassA(&wc);
 
         // pass in the win32Layer struct as the last param so that we can use it in other win32 functions
@@ -87,16 +117,25 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
         }
         ShowWindow(win32Layer.window, showCode);
     }
+    
+    FactionMain();
 
     { // message loop
-        MSG msg = { };
+        MSG msg = {};
         while (GetMessage(&msg, NULL, 0, 0)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
 
-            RenderFrame();            
+            RECT clientRect;
+            GetClientRect(win32Layer.window, &clientRect);
+            Vec2 windowSize;
+            windowSize.x = (float)clientRect.right;
+            windowSize.y = (float)clientRect.bottom;
+
+            RenderFrame(windowSize, &win32Layer.userInput); // right and bottom is actually the window size
             SwapBuffers(win32Layer.deviceContext);
-            Sleep(16); // make a more robust system for timing
+            int framesPerSec = 30;
+            Sleep((int)((1000.f / framesPerSec) * 100.f)); // TODO: make a more robust system for timing
         }
     }
 
@@ -112,6 +151,6 @@ std::string PlatformGetExeDir() { // don't actaully need this function yet...
     return result;
 }
 
-void PlatformDMG(const char *msg) {
+void PlatformDBG(const char *msg) {
     OutputDebugStringA(msg);
 }
