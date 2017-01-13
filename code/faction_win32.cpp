@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <Windowsx.h>
 #include <algorithm>
+#include <assert.h>
 
 #include "faction_platform.h"
 #include "faction.h"
@@ -77,6 +78,19 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
         case WM_RBUTTONUP:   { win32Layer->userInput.mouseState[1] = 0; return 1; }
         case WM_MBUTTONDOWN: { win32Layer->userInput.mouseState[2] = 1; return 1; }
         case WM_MBUTTONUP:   { win32Layer->userInput.mouseState[2] = 0; return 1; }
+        case WM_KEYDOWN: {
+            if (wParam < 256) {
+                win32Layer->userInput.keysDown[wParam] = true;
+            }
+            return 1;
+        }
+        case WM_KEYUP: {
+            if (wParam < 256) {
+                win32Layer->userInput.keysDown[wParam] = false;
+            }
+            return 1;
+        }
+
         case WM_DESTROY: {
             PostQuitMessage(0);
             return 0;
@@ -97,6 +111,8 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCode) {
     FactionWin32Layer win32Layer = {};
+    const int defaultWindowWidth = 1280;
+    const int defaultWindowHeight = 720;
 
     { // create and show window
         WNDCLASSA wc = {};
@@ -109,7 +125,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
 
         // pass in the win32Layer struct as the last param so that we can use it in other win32 functions
         win32Layer.window = CreateWindowExA(0, wc.lpszClassName, "Faction", WS_OVERLAPPEDWINDOW,
-                                            CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
+                                            CW_USEDEFAULT, CW_USEDEFAULT, defaultWindowWidth, defaultWindowHeight,
                                             NULL, NULL, instance, &win32Layer); 
         if (win32Layer.window == NULL) {
             OutputDebugStringA("Window failed to open\n");
@@ -118,21 +134,57 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
         ShowWindow(win32Layer.window, showCode);
     }
     
-    FactionMain();
+    GameState *gameState = FactionMain(defaultWindowWidth, defaultWindowHeight);
+    win32Layer.userInput.keyMap[keyCode_A] = 'A';
+    win32Layer.userInput.keyMap[keyCode_D] = 'D';
+    win32Layer.userInput.keyMap[keyCode_S] = 'S';
+    win32Layer.userInput.keyMap[keyCode_W] = 'W';
+    win32Layer.userInput.keyMap[keyCode_Tab] = VK_TAB;
+    win32Layer.userInput.keyMap[keyCode_LeftArrow] = VK_LEFT;
+    win32Layer.userInput.keyMap[keyCode_RightArrow] = VK_RIGHT;
+    win32Layer.userInput.keyMap[keyCode_UpArrow] = VK_UP;
+    win32Layer.userInput.keyMap[keyCode_DownArrow] = VK_DOWN;
+    win32Layer.userInput.keyMap[keyCode_Enter] = VK_RETURN;
+    win32Layer.userInput.keyMap[keyCode_Escape] = VK_ESCAPE;
+
+    LARGE_INTEGER frequency; // how many counts per second for the performance counter
+    QueryPerformanceFrequency(&frequency); 
 
     { // message loop
         MSG msg = {};
         while (GetMessage(&msg, NULL, 0, 0)) {
+
+            // start timing
+            LARGE_INTEGER startingTime, endingTime;
+            int64_t elapsedMicroseconds;
+            QueryPerformanceCounter(&startingTime);
+
             TranslateMessage(&msg);
             DispatchMessage(&msg);
 
             RECT clientRect;
             GetClientRect(win32Layer.window, &clientRect);
-
-            GameRenderAndUpdate((float)clientRect.right, (float)clientRect.bottom, &win32Layer.userInput); // right and bottom is actually the window size
+            float windowWidth = (float)clientRect.right;
+            float windowHeight = (float)clientRect.bottom;
+            GameRenderAndUpdate(gameState, windowWidth, windowHeight, &win32Layer.userInput);
             SwapBuffers(win32Layer.deviceContext);
-            float framesPerSec = 30.0f;
-            Sleep((int)(1000.0f / framesPerSec)); // TODO: make a more robust system for timing
+
+            // end timing
+            QueryPerformanceCounter(&endingTime);
+            elapsedMicroseconds = endingTime.QuadPart - startingTime.QuadPart;
+            elapsedMicroseconds *= 1000000;
+            elapsedMicroseconds /= frequency.QuadPart;
+
+            float targetFramesPerSec = 30.0f;
+            int64_t targetMicroseconds = (int64_t)(1000000.0f / targetFramesPerSec);
+            int64_t microsecondsToWait = targetMicroseconds - elapsedMicroseconds;
+            if (microsecondsToWait > 0) {
+                gameState->deltaT = targetMicroseconds / 1000.f;
+                Sleep((DWORD)(microsecondsToWait / 1000.f)); // TODO: still no good?? Sleep() only has millisecond resultion
+            } else {
+                // missed the frame rate
+                assert(false);
+            }
         }
     }
 
@@ -148,6 +200,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
 //     return result;
 // }
 
-// void PlatformDBG(const char *msg) {
-//     OutputDebugStringA(msg);
-// }
+void PlatformDBG(const char *msg) {
+    OutputDebugStringA(msg);
+}
