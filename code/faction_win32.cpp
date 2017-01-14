@@ -15,7 +15,7 @@ struct FactionWin32Layer {
     HWND window;
     HDC deviceContext;
     HGLRC renderingContext;
-    UserInput userInput;
+    Input input;
 };
 
 static int64_t globalPerformanceFreq;
@@ -61,44 +61,47 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
     if (win32Layer == NULL) {
         return DefWindowProcA(window, message, wParam, lParam);
     }
-    win32Layer->userInput.scroll = 0;
+    win32Layer->input.scroll = 0;
 
     LRESULT result = 0;
     switch (message) {
         case WM_MOUSEMOVE: {
-            win32Layer->userInput.cursorPos.x = (float)((lParam << 16) >> 16);
-            win32Layer->userInput.cursorPos.y = (float)(lParam >> 16);
+            win32Layer->input.cursorPos.x = (float)((lParam << 16) >> 16);
+            win32Layer->input.cursorPos.y = (float)(lParam >> 16);
             return 1;
         }
         case WM_MOUSEWHEEL: {
             auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
-            win32Layer->userInput.scroll = (int)zDelta;
+            win32Layer->input.scroll = (int)zDelta;
             return 1;
         }
-        case WM_LBUTTONDOWN: { win32Layer->userInput.mouseState[1] = 1; return 1; }
-        case WM_LBUTTONUP:   { win32Layer->userInput.mouseState[1] = 0; return 1; }
-        case WM_RBUTTONDOWN: { win32Layer->userInput.mouseState[1] = 1; return 1; }
-        case WM_RBUTTONUP:   { win32Layer->userInput.mouseState[1] = 0; return 1; }
-        case WM_MBUTTONDOWN: { win32Layer->userInput.mouseState[2] = 1; return 1; }
-        case WM_MBUTTONUP:   { win32Layer->userInput.mouseState[2] = 0; return 1; }
+        case WM_LBUTTONDOWN: { win32Layer->input.mouseState[0] = true; return 1; }
+        case WM_LBUTTONUP:   { win32Layer->input.mouseState[0] = false; return 1; }
+        case WM_RBUTTONDOWN: { win32Layer->input.mouseState[1] = true; return 1; }
+        case WM_RBUTTONUP:   { win32Layer->input.mouseState[1] = false; return 1; }
+        case WM_MBUTTONDOWN: { win32Layer->input.mouseState[2] = true; return 1; }
+        case WM_MBUTTONUP:   { win32Layer->input.mouseState[2] = false; return 1; }
+
         case WM_KEYDOWN: {
             if (wParam < 256) {
-                win32Layer->userInput.keysDown[wParam] = true;
+                win32Layer->input.keysDown[wParam] = true;
             }
             return 1;
         }
         case WM_KEYUP: {
             if (wParam < 256) {
-                win32Layer->userInput.keysDown[wParam] = false;
+                win32Layer->input.keysDown[wParam] = false;
             }
             return 1;
         }
 
         case WM_DESTROY: {
+            globalGameIsRunning = false;
             PostQuitMessage(0);
             return 0;
         }
         case WM_CLOSE: {
+            globalGameIsRunning = false;            
             PostQuitMessage(0);
             return 0;
         }
@@ -147,25 +150,25 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
         ShowWindow(win32Layer.window, showCode);
     }
     
-    Game *gameState = FactionMain(defaultWindowWidth, defaultWindowHeight);
-    win32Layer.userInput.keyMap[keyCode_A] = 'A';
-    win32Layer.userInput.keyMap[keyCode_D] = 'D';
-    win32Layer.userInput.keyMap[keyCode_S] = 'S';
-    win32Layer.userInput.keyMap[keyCode_W] = 'W';
-    win32Layer.userInput.keyMap[keyCode_Tab] = VK_TAB;
-    win32Layer.userInput.keyMap[keyCode_LeftArrow] = VK_LEFT;
-    win32Layer.userInput.keyMap[keyCode_RightArrow] = VK_RIGHT;
-    win32Layer.userInput.keyMap[keyCode_UpArrow] = VK_UP;
-    win32Layer.userInput.keyMap[keyCode_DownArrow] = VK_DOWN;
-    win32Layer.userInput.keyMap[keyCode_Enter] = VK_RETURN;
-    win32Layer.userInput.keyMap[keyCode_Escape] = VK_ESCAPE;
+    Game *gameState = FactionInit(defaultWindowWidth, defaultWindowHeight);
+    win32Layer.input.keyMap[keyCode_A] = 'A';
+    win32Layer.input.keyMap[keyCode_D] = 'D';
+    win32Layer.input.keyMap[keyCode_S] = 'S';
+    win32Layer.input.keyMap[keyCode_W] = 'W';
+    win32Layer.input.keyMap[keyCode_Tab] = VK_TAB;
+    win32Layer.input.keyMap[keyCode_LeftArrow] = VK_LEFT;
+    win32Layer.input.keyMap[keyCode_RightArrow] = VK_RIGHT;
+    win32Layer.input.keyMap[keyCode_UpArrow] = VK_UP;
+    win32Layer.input.keyMap[keyCode_DownArrow] = VK_DOWN;
+    win32Layer.input.keyMap[keyCode_Enter] = VK_RETURN;
+    win32Layer.input.keyMap[keyCode_Escape] = VK_ESCAPE;
 
     LARGE_INTEGER performanceFreq; // how many counts per second for the performance counter
     QueryPerformanceFrequency(&performanceFreq);
     globalPerformanceFreq = performanceFreq.QuadPart;
     globalGameIsRunning = true;
 
-    { // message loop
+    { // game loop
         while (globalGameIsRunning) {
             // start timing
             LARGE_INTEGER startingTime = Win32GetWallClock();
@@ -178,9 +181,10 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
 
             RECT clientRect;
             GetClientRect(win32Layer.window, &clientRect);
-            float windowWidth = (float)clientRect.right;
-            float windowHeight = (float)clientRect.bottom;
-            GameRenderAndUpdate(gameState, windowWidth, windowHeight, &win32Layer.userInput);
+            win32Layer.input.windowWidth = (float)clientRect.right;
+            win32Layer.input.windowHeight = (float)clientRect.bottom;
+
+            GameRenderAndUpdate(gameState, &win32Layer.input);
             SwapBuffers(win32Layer.deviceContext);
 
             // end timing
@@ -193,8 +197,8 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
             if (secondsToWait > 0) {
                 gameState->deltaT = targetSeconds;
                 Sleep((DWORD)(secondsToWait * 1000.f)); // is there a way to wait at a better resolution than milliseconds?
-            } else {
-                //assert(false); // missed the frame rate
+            } else if (secondsToWait < 0) {
+                // assert(false); // missed the frame rate
             }
         }
     }

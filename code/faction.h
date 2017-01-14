@@ -6,6 +6,7 @@
 enum TextureIDs {
 	textureID_Cobble,
 	textureID_Wood,
+	textureID_Pumpkin,
 	textureID_Count,
 };
 
@@ -17,5 +18,6 @@ struct Game {
 	Vec2 cameraPos; 
 };
 
-Game *FactionMain(int windowWidth, int windowHeight);
-void GameRenderAndUpdate(Game *game, float windowWidth, float windowSize, UserInput *userInput);
+Game *FactionInit(int windowWidth, int windowHeight);
+void FactionShutdown(Game *game);
+void GameRenderAndUpdate(Game *game, Input *input);

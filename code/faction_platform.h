@@ -18,10 +18,13 @@ enum KeyCodes {
 	keyCode_Count
 };
 
-struct UserInput {
-	bool mouseState[3]; // left, right, middle
+struct Input {
 	Vec2 cursorPos;
+	float windowWidth;
+	float windowHeight;
+
 	int scroll; // zero if no scroll, else positive or negative offset to show scroll amount
+	bool mouseState[3]; // left, right, middle
 
 	int keyMap[keyCode_Count]; // the indexes of the key states in the keyDown array
 	bool keysDown[512];
