@@ -18,6 +18,9 @@ struct FactionWin32Layer {
     UserInput userInput;
 };
 
+static int64_t globalPerformanceFreq;
+static bool globalGameIsRunning;
+
 LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     // more convenient to handle this separately
     if (message == WM_CREATE) {
@@ -68,7 +71,7 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
             return 1;
         }
         case WM_MOUSEWHEEL: {
-			auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
+            auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
             win32Layer->userInput.scroll = (int)zDelta;
             return 1;
         }
@@ -109,6 +112,16 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
     return result;
 }
 
+LARGE_INTEGER Win32GetWallClock() {
+    LARGE_INTEGER result;
+    QueryPerformanceCounter(&result);
+    return result;
+}
+
+inline float Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
+    return (float)(end.QuadPart - start.QuadPart) / (float)globalPerformanceFreq;
+}
+
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCode) {
     FactionWin32Layer win32Layer = {};
     const int defaultWindowWidth = 1280;
@@ -134,7 +147,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
         ShowWindow(win32Layer.window, showCode);
     }
     
-    GameState *gameState = FactionMain(defaultWindowWidth, defaultWindowHeight);
+    Game *gameState = FactionMain(defaultWindowWidth, defaultWindowHeight);
     win32Layer.userInput.keyMap[keyCode_A] = 'A';
     win32Layer.userInput.keyMap[keyCode_D] = 'D';
     win32Layer.userInput.keyMap[keyCode_S] = 'S';
@@ -147,20 +160,21 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
     win32Layer.userInput.keyMap[keyCode_Enter] = VK_RETURN;
     win32Layer.userInput.keyMap[keyCode_Escape] = VK_ESCAPE;
 
-    LARGE_INTEGER frequency; // how many counts per second for the performance counter
-    QueryPerformanceFrequency(&frequency); 
+    LARGE_INTEGER performanceFreq; // how many counts per second for the performance counter
+    QueryPerformanceFrequency(&performanceFreq);
+    globalPerformanceFreq = performanceFreq.QuadPart;
+    globalGameIsRunning = true;
 
     { // message loop
-        MSG msg = {};
-        while (GetMessage(&msg, NULL, 0, 0)) {
-
+        while (globalGameIsRunning) {
             // start timing
-            LARGE_INTEGER startingTime, endingTime;
-            int64_t elapsedMicroseconds;
-            QueryPerformanceCounter(&startingTime);
+            LARGE_INTEGER startingTime = Win32GetWallClock();
 
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
+            MSG msg = {};
+            while(PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
 
             RECT clientRect;
             GetClientRect(win32Layer.window, &clientRect);
@@ -170,35 +184,23 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
             SwapBuffers(win32Layer.deviceContext);
 
             // end timing
-            QueryPerformanceCounter(&endingTime);
-            elapsedMicroseconds = endingTime.QuadPart - startingTime.QuadPart;
-            elapsedMicroseconds *= 1000000;
-            elapsedMicroseconds /= frequency.QuadPart;
+            LARGE_INTEGER endingTime = Win32GetWallClock();
+            float elapsedSeconds = Win32GetSecondsElapsed(startingTime, endingTime);
 
             float targetFramesPerSec = 30.0f;
-            int64_t targetMicroseconds = (int64_t)(1000000.0f / targetFramesPerSec);
-            int64_t microsecondsToWait = targetMicroseconds - elapsedMicroseconds;
-            if (microsecondsToWait > 0) {
-                gameState->deltaT = targetMicroseconds / 1000.f;
-                Sleep((DWORD)(microsecondsToWait / 1000.f)); // TODO: still no good?? Sleep() only has millisecond resultion
+            float targetSeconds = 1.0f / targetFramesPerSec;
+            float secondsToWait = targetSeconds - elapsedSeconds;
+            if (secondsToWait > 0) {
+                gameState->deltaT = targetSeconds;
+                Sleep((DWORD)(secondsToWait * 1000.f)); // is there a way to wait at a better resolution than milliseconds?
             } else {
-                // missed the frame rate
-                assert(false);
+                //assert(false); // missed the frame rate
             }
         }
     }
 
     return 0;
 }
-
-// std::string PlatformGetExeDir() { // don't actaully need this function yet...
-//     TCHAR filePath[MAX_PATH];
-//     GetModuleFileName(NULL, filePath, MAX_PATH);
-//     std::string fullExe(filePath);
-//     std::string result = fullExe.substr(0, fullExe.find_last_of('\\')+1);
-//     std::replace(result.begin(), result.end(), '\\', '/');
-//     return result;
-// }
 
 void PlatformDBG(const char *msg) {
     OutputDebugStringA(msg);

@@ -5,5 +5,7 @@ set CommonLinkerFlags= -incremental:no -opt:ref user32.lib gdi32.lib winmm.lib O
 IF NOT EXIST ..\build mkdir ..\build
 pushd ..\build
 
-cl %CommonCompilerFlags% ..\code\faction.cpp ..\code\faction_win32.cpp /link %CommonLinkerFlags%
+set Files= ..\code\faction.cpp ..\code\faction_win32.cpp ..\code\imgui\imgui.cpp ..\code\imgui\imgui_draw.cpp
+
+cl %CommonCompilerFlags% %Files% /link %CommonLinkerFlags%
 popd

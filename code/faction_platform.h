@@ -1,6 +1,6 @@
 
 #pragma once
-#include <string>
+#include "faction_types.h"
 
 enum KeyCodes {
 	keyCode_Tab,
@@ -18,7 +18,15 @@ enum KeyCodes {
 	keyCode_Count
 };
 
-std::string PlatformGetExeDir();
+struct UserInput {
+	bool mouseState[3]; // left, right, middle
+	Vec2 cursorPos;
+	int scroll; // zero if no scroll, else positive or negative offset to show scroll amount
+
+	int keyMap[keyCode_Count]; // the indexes of the key states in the keyDown array
+	bool keysDown[512];
+};
+
 void PlatformDBG(const char *msg);
 
 
