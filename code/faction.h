@@ -9,11 +9,13 @@ enum TextureID {
 	textureID_Pumpkin,
 	textureID_PumpkinBody,
 	textureID_Melon,
+	textureID_Character,
 	textureID_Count,
 };
 
-#define PLAYER_WIDTH 1.0f
-#define PLAYER_HEIGHT 1.0f
+#define PLAYER_WIDTH 1.5f
+#define PLAYER_HEIGHT 1.5f
+#define PLAYER_SPEED_MS 5.0f
 
 #define WORLD_WIDTH 30
 #define WORLD_HEIGHT 14
@@ -40,29 +42,59 @@ static int world[WORLD_HEIGHT][WORLD_WIDTH] = {
 // 	bool isSolid;
 // };
 
-typedef int EntityFlags;
-enum EnitityFlagsEnum {
-	enitityFlags_None = 0,
-	enitityFlags_HasCollision = 1 << 0,
-	enitityFlags_IsCreature = 1 << 1,
-	enitityFlags_IsLandscape = 1 << 2,
+// typedef int EntityFlags;
+// enum EnitityFlagsEnum {
+// 	enitityFlags_None = 0,
+// 	enitityFlags_HasCollision = 1 << 0,
+// 	enitityFlags_IsCreature = 1 << 1,
+// 	enitityFlags_IsLandscape = 1 << 2,
+// };
+
+// struct Entity {
+// 	TextureID textureID;
+// 	Rect bounds;
+
+// 	EntityFlags flags;
+// 	Rect collisionR;
+// 	float animPos;
+// };
+
+// struct TextureInfo {
+// 	int widthPx;
+// 	int heightPx;
+// 	bool isAnimation;
+// 	bool isVertical;
+// 	int numFrames;
+// };
+
+struct AnimatedSprite {
+	int textureID;
+	int numFrames; // assumed to be vertical
+	float animPos;
 };
 
-struct Entity {
-	TextureID textureID;	
-	Rect bounds;
-
-	EntityFlags flags;
-	Rect collisionR;
+struct Projectile {
+	bool isActive;
+	Vec2 start;
+	Vec2 end;
+	float pos;
+	float gradient;
+	float yIntercept;
 };
 
 struct Game {
-	GLuint textures[textureID_Count];
+	GLuint textureIDs[textureID_Count];
+	// TextureInfo textures[textureID_Count];
+
+	Projectile projectiles[50];
 
 	float tileSizePx;
 	float tileSizeMetres;
 
-	Entity player;
+	// Entity player;
+	AnimatedSprite playerSprite;
+
+	bool debug_TileOutlines;
 
 	Vec2 playerPos;
 	Vec2 cameraPos; 

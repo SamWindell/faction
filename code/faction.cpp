@@ -192,30 +192,35 @@ Game *FactionInit(float windowPixelWidth, float windowPixelHeight) {
 
 	ImGuiInit();
 
-	glGenTextures(textureID_Count, game->textures);
-	CreateGlTextureFromImage("../resources/cobble.png", game->textures[textureID_Cobble]);
-	CreateGlTextureFromImage("../resources/wood.png", game->textures[textureID_Wood]);
-	CreateGlTextureFromImage("../resources/pumpkin.png", game->textures[textureID_Pumpkin]);
-	CreateGlTextureFromImage("../resources/pumpkin_body.png", game->textures[textureID_PumpkinBody]);
-	CreateGlTextureFromImage("../resources/melon.png", game->textures[textureID_Melon]);
+	glGenTextures(textureID_Count, game->textureIDs);
+	CreateGlTextureFromImage("../resources/cobble.png", game->textureIDs[textureID_Cobble]);
+	CreateGlTextureFromImage("../resources/wood.png", game->textureIDs[textureID_Wood]);
+	CreateGlTextureFromImage("../resources/pumpkin.png", game->textureIDs[textureID_Pumpkin]);
+	CreateGlTextureFromImage("../resources/pumpkin_body.png", game->textureIDs[textureID_PumpkinBody]);
+	CreateGlTextureFromImage("../resources/melon.png", game->textureIDs[textureID_Melon]);
+	CreateGlTextureFromImage("../resources/character.png", game->textureIDs[textureID_Character]);
+
+	game->playerSprite.numFrames = 2;
+	game->playerSprite.textureID = textureID_Character;
 
 	game->playerPos = {3, 3};
 	game->tileSizePx = 80;
 	game->tileSizeMetres = 1.2f;
 
-	game->player.bounds.pos = {3, 3};
-	game->player.flags = enitityFlags_IsCreature | enitityFlags_HasCollision;
-	game->player.textureID = textureID_Pumpkin;
+	// game->player.bounds.pos = {3, 3};
+	// game->player.flags = enitityFlags_IsCreature | enitityFlags_HasCollision;
+	// game->player.textureID = textureID_Pumpkin;
 
 	return game;
 }
+
 
 void FactionShutdown(Game *game) {
 	ImGuiShutdown();
 }
 
 static void DrawTexturedRectangle(Game *game, int textureID, float x, float y, float width, float height) {
-	glBindTexture(GL_TEXTURE_2D, game->textures[textureID]);
+	glBindTexture(GL_TEXTURE_2D, game->textureIDs[textureID]);
 
 	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_BLEND);
@@ -242,6 +247,42 @@ static void DrawTexturedRectangle(Game *game, int textureID, float x, float y, f
 	glDisable(GL_TEXTURE_2D);
 }
 
+static void DrawTexturedRectangleAnim(Game *game, int textureID, float x, float y, float width, float height, float textureYStart, float textureYEnd) {
+	glBindTexture(GL_TEXTURE_2D, game->textureIDs[textureID]);
+
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+	// glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+   
+	glBegin(GL_QUADS);
+	
+	// upper left
+	glTexCoord2f(0, textureYEnd);
+	glVertex3f(x, y + height, 0.0);
+	// upper right
+	glTexCoord2f(1, textureYEnd);
+	glVertex3f(x + width, y + height, 0.0);    
+	// lower right
+	glTexCoord2f(1, textureYStart);
+	glVertex3f(x + width, y, 0.0);    
+	// lower left
+	glTexCoord2f(0, textureYStart);
+	glVertex3f(x, y, 0.0);    
+	
+	glEnd();	
+	glDisable(GL_TEXTURE_2D);
+}
+
+void DrawAnimatedSprite(Game *game, AnimatedSprite *sprite, float x, float y, float w, float h) {
+	float textureFrameSize = 1.0f / sprite->numFrames;
+	float textureStart = textureFrameSize * (int)sprite->animPos;
+	float textureEnd = textureStart + textureFrameSize;	
+
+	DrawTexturedRectangleAnim(game, sprite->textureID, x, y, w, h, textureStart, textureEnd);
+}
+
 static void DrawBlobMan(Game *game, int headTextureID, int bodyTextureID, float x, float y, float sectionW, float sectionH) {
 	DrawTexturedRectangle(game, bodyTextureID, x, y, sectionW, sectionH);
 	DrawTexturedRectangle(game, textureID_Pumpkin, x, y - sectionH, sectionW, sectionH);
@@ -255,6 +296,10 @@ static float MetresToPixels(Game *game, float value) {
 	return value * (game->tileSizePx / game->tileSizeMetres);
 }
 
+static float PixelsToMetres(Game *game, float value) {
+	return (value / game->tileSizePx) * game->tileSizeMetres;
+}
+
 static bool IsPointEmpty(Game *game, Vec2 pos) {
 	int tileX = (int)(pos.x / game->tileSizeMetres);
 	int tileY = (int)(pos.y / game->tileSizeMetres);
@@ -263,8 +308,12 @@ static bool IsPointEmpty(Game *game, Vec2 pos) {
 
 void GameRenderAndUpdate(Game *game, Input *input) {
 	glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
-
 	glClear(GL_COLOR_BUFFER_BIT);
+
+	ImGuiStartFrame(input);
+	auto imguiDrawList = ImGui::GetWindowDrawList();
+	imguiDrawList->PushClipRectFullScreen();
+
 	glViewport(0, 0, (GLint)input->windowWidth, (GLint)input->windowHeight);
 
 	glMatrixMode(GL_PROJECTION);
@@ -275,21 +324,20 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	glPushMatrix();
 	glLoadIdentity();
 
-	float playerSpeedMetreSec = 5;
-
+	bool playerMoved = false;
 	Vec2 newPos = game->playerPos;
 	if (IsKeyDown(input, keyCode_W)) {
-		newPos.y -= playerSpeedMetreSec * input->deltaT;
+		newPos.y -= PLAYER_SPEED_MS * input->deltaT;
 	}
 	if (IsKeyDown(input, keyCode_S)) {
-		newPos.y += playerSpeedMetreSec * input->deltaT;
+		newPos.y += PLAYER_SPEED_MS * input->deltaT;
 	}
 
 	if (IsKeyDown(input, keyCode_D)) {
-		newPos.x += playerSpeedMetreSec * input->deltaT;
+		newPos.x += PLAYER_SPEED_MS * input->deltaT;
 	}
 	if (IsKeyDown(input, keyCode_A)) {
-		newPos.x -= playerSpeedMetreSec * input->deltaT;
+		newPos.x -= PLAYER_SPEED_MS * input->deltaT;
 	}
 
 	if (input->scroll) {
@@ -297,7 +345,7 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	}
 
 	if (newPos != game->playerPos) {
-
+		playerMoved = true;
 		Vec2 newPlayerLeft = newPos;
 		Vec2 newPlayerRight = newPos;
 		newPlayerLeft.x -= PLAYER_WIDTH / 2;
@@ -308,12 +356,14 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 		newPlayerTopLeft.y -= PLAYER_HEIGHT / 2;
 		newPlayerTopRight.y -= PLAYER_HEIGHT / 2;
 
-		if (IsPointEmpty(game, newPlayerRight) && IsPointEmpty(game, newPos) &&
-		    IsPointEmpty(game, newPlayerTopRight) && IsPointEmpty(game, newPlayerLeft)) {
+		if (IsPointEmpty(game, newPlayerRight) && IsPointEmpty(game, newPlayerLeft) &&
+		    IsPointEmpty(game, newPlayerTopRight) && IsPointEmpty(game, newPlayerTopLeft)) {
 			game->playerPos = newPos;
 		}
 	}
 
+
+	// camera
 	float windowTileWidth = input->windowWidth / game->tileSizePx;
 	float windowTileHeight = input->windowHeight / game->tileSizePx;
 	int cameraVisibleTilesX = (int)ceilf(windowTileWidth);
@@ -324,6 +374,24 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 
 	game->cameraPos.x = Max(game->playerPos.x - (cameraWidthMetres / 2), 0);
 	game->cameraPos.y = Max(game->playerPos.y - (cameraHeightMetres / 2), 0);
+
+	float cursorInWorldX = (PixelsToMetres(game, input->cursorPos.x)) + game->cameraPos.x;
+	float cursorInWorldY = (PixelsToMetres(game, input->cursorPos.y)) + game->cameraPos.y;
+
+	// projectiles
+	// if (input->mouseState[0]) {
+	// 	Projectile *proj = NULL;
+	// 	for (int i = 0; i < ArraySize(game->projectiles); ++i) {
+	// 		if (!game->projectiles[i].isActive) {
+	// 			proj = &game->projectiles[i];
+	// 		}
+	// 	}
+	// 	if (proj) {
+	// 		proj->pos = game->playerPos;
+	// 		proj->gradient = (cursorInWorldY - game->playerPos.y) / (cursorInWorldX - game->playerPos.x);
+	// 		proj->yIntercept = cursorInWorldY - proj->gradient * cursorInWorldX;
+	// 	}
+	// }
 
 	MaxVec2(game->cameraPos, Vec2(0, 0));
 	Vec2 worldSize = Vec2(WORLD_WIDTH, WORLD_HEIGHT) * game->tileSizeMetres;
@@ -347,20 +415,47 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 				float xPosPx = MetresToPixels(game, x * game->tileSizeMetres - offsetX);
 				float yPosPx = MetresToPixels(game, y * game->tileSizeMetres - offsetY);
 				DrawTexturedRectangle(game, world[tileY][tileX], xPosPx, yPosPx, game->tileSizePx, game->tileSizePx);
+				if (game->debug_TileOutlines) {
+					imguiDrawList->AddRect(ImVec2(xPosPx, yPosPx), ImVec2(xPosPx + game->tileSizePx, yPosPx + game->tileSizePx),
+										   0xff0000ff);
+				}
 			}
 		}
 	}
 
+	// for (int i = 0; i < ArraySize(game->projectiles); ++i) {
+	// 	if (game->projectiles[i].isActive) {
+	// 		game->projectiles[i].pos += 0.1f
+	// 		float newPosX = game->projectiles[i].pos
+
+	// 	}
+	// }
+
 	Vec2 worldPos = game->cameraPos * -1;
 	float playerPosPixelsX = MetresToPixels(game, worldPos.x + game->playerPos.x - PLAYER_WIDTH / 2);
 	float playerPosPixelsY = MetresToPixels(game, worldPos.y + game->playerPos.y - PLAYER_HEIGHT);
-	DrawBlobMan(game, textureID_Pumpkin, textureID_PumpkinBody, playerPosPixelsX, playerPosPixelsY, 
-	            MetresToPixels(game, PLAYER_WIDTH), MetresToPixels(game, PLAYER_HEIGHT));
+	if (playerMoved) {
+		float animEachFrameSpeedSeconds = 10.f;
+		game->playerSprite.animPos += animEachFrameSpeedSeconds * input->deltaT;
+		if (game->playerSprite.animPos > game->playerSprite.numFrames) {
+			game->playerSprite.animPos = 0;
+		}
+	}
+	DrawAnimatedSprite(game, &game->playerSprite, playerPosPixelsX, playerPosPixelsY, MetresToPixels(game, PLAYER_WIDTH), MetresToPixels(game, PLAYER_HEIGHT));
 
-	ImGuiStartFrame(input);
+
+	glMatrixMode(GL_MODELVIEW);
+	glPopMatrix();
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+
+	imguiDrawList->PopClipRect();
+	if (ImGui::Button("Tile Outlines")) game->debug_TileOutlines = !game->debug_TileOutlines;
 	ImGui::Text("FPS: %.2f", ImGui::GetIO().Framerate);
 	ImGui::Text("CamOffsetX: %.2f", offsetX);
 	ImGui::Text("CamOffsetY: %.2f", offsetY);
+	ImGui::Text("AnimPos: %.2f", game->playerSprite.animPos);
+	ImGui::Text("CursorPosM: (%.2f, %.2f)", cursorInWorldX, cursorInWorldY);
 	ImGui::Text("PlayerPos: (%.2f, %.2f)", game->playerPos.x, game->playerPos.y);
 	ImGui::Text("TilePX: %.2f", game->tileSizePx);
 	ImGuiEndFrame();

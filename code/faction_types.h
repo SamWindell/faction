@@ -4,6 +4,7 @@
 #define Min(a, b) (((a) < (b)) ? (a) : (b))
 #define Max(a, b) (((a) > (b)) ? (a) : (b))
 #define Clamp(x, a, b) Max((a), Min((x), (b)))
+#define ArraySize(arr) (sizeof(arr) / sizeof(arr[0]))
 
 struct Vec2 {
 	Vec2(float _x, float _y) : x(_x), y(_y) {}
