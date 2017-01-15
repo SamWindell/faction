@@ -43,3 +43,55 @@ static inline Vec2& operator/=(Vec2& lhs, const float rhs)         { lhs.x /= rh
 static inline bool operator==(const Vec2& l, const Vec2& r)        { return l.x == r.x && l.y == r.y; }
 static inline bool operator!=(const Vec2& l, const Vec2& r)        { return !(l.x == r.x && l.y == r.y); }
 
+struct Rect {
+	Rect(Vec2 _pos, float _w, float _h) : pos(_pos), w(_w), h(_h) {}
+	Rect(float x, float y, float _w, float _h) : pos(x, y), w(_w), h(_h) {}
+	Rect() :x(0), y(0), w(0), h(0) {}
+
+	Rect WithY(float _y) {
+		pos.y = _y;
+		return *this;
+	}
+	Rect WithLeftPulledIn(float xOffs) {
+		auto r = *this;
+		r.x += xOffs;
+		r.w -= xOffs;
+		return r;
+	}
+	void SetBottom(float b) {
+		h = b - pos.y;
+	}
+	float Bottom() {
+		return pos.y + h;
+	}
+	float Right() {
+		return pos.x + w;
+	}
+	Vec2 Centre() {
+		Vec2 p;
+		p.x = pos.x + (w * 0.5f);
+		p.y = pos.y + (h * 0.5f);
+		return p;
+	}
+	bool Contains(Vec2 p) {
+		return p.x >= pos.x && p.x < pos.x + w && p.y >= pos.y && p.y < pos.y + h;
+	}
+   	Vec2 MinPos() { return pos; }
+   	Vec2 MaxPos() { return pos + size; }
+
+	union {
+		Vec2 pos;
+		struct {
+			float x;
+			float y;
+		};
+	};
+	union {
+		Vec2 size;
+		struct {
+			float w;
+			float h;
+		};
+	};
+};
+

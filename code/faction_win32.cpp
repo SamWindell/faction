@@ -150,7 +150,12 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
         ShowWindow(win32Layer.window, showCode);
     }
     
-    Game *gameState = FactionInit(defaultWindowWidth, defaultWindowHeight);
+    RECT clientRect;
+    GetClientRect(win32Layer.window, &clientRect);
+    float windowWidth = (float)clientRect.right;
+    float windowHeight = (float)clientRect.bottom;
+
+    Game *gameState = FactionInit(windowWidth, windowHeight);
     win32Layer.input.keyMap[keyCode_A] = 'A';
     win32Layer.input.keyMap[keyCode_D] = 'D';
     win32Layer.input.keyMap[keyCode_S] = 'S';
@@ -179,7 +184,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
                 DispatchMessage(&msg);
             }
 
-            RECT clientRect;
             GetClientRect(win32Layer.window, &clientRect);
             win32Layer.input.windowWidth = (float)clientRect.right;
             win32Layer.input.windowHeight = (float)clientRect.bottom;
@@ -195,11 +199,12 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
             float targetSeconds = 1.0f / targetFramesPerSec;
             float secondsToWait = targetSeconds - elapsedSeconds;
             if (secondsToWait > 0) {
-                gameState->deltaT = targetSeconds;
+                win32Layer.input.deltaT = targetSeconds;
                 Sleep((DWORD)(secondsToWait * 1000.f)); // is there a way to wait at a better resolution than milliseconds?
             } else if (secondsToWait < 0) {
                 // assert(false); // missed the frame rate
             }
+            win32Layer.input.scroll = 0;
         }
     }
 

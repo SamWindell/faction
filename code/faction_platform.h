@@ -22,6 +22,7 @@ struct Input {
 	Vec2 cursorPos;
 	float windowWidth;
 	float windowHeight;
+	float deltaT;
 
 	int scroll; // zero if no scroll, else positive or negative offset to show scroll amount
 	bool mouseState[3]; // left, right, middle

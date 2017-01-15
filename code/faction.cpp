@@ -54,8 +54,8 @@ static void ImGuiRenderDrawLists(ImDrawData *draw_data) {
 	glPushMatrix();
 	glLoadIdentity();
 
-// Render command lists
-#define OFFSETOF(TYPE, ELEMENT) ((size_t) & (((TYPE *) 0)->ELEMENT))
+	// Render command lists
+	#define OFFSETOF(TYPE, ELEMENT) ((size_t) & (((TYPE *) 0)->ELEMENT))
 	for (int n = 0; n < draw_data->CmdListsCount; n++) {
 		const ImDrawList *cmd_list = draw_data->CmdLists[n];
 		const ImDrawVert *vtx_buffer = cmd_list->VtxBuffer.Data;
@@ -78,7 +78,7 @@ static void ImGuiRenderDrawLists(ImDrawData *draw_data) {
 			idx_buffer += pcmd->ElemCount;
 		}
 	}
-#undef OFFSETOF
+	#undef OFFSETOF
 
 	// Restore modified state
 	glDisableClientState(GL_COLOR_ARRAY);
@@ -136,7 +136,7 @@ static void ImGuiInit() {
 	io.RenderDrawListsFn = ImGuiRenderDrawLists;
 }
 
-static void ImGuiStartFrame(Game *game, Input *input) {
+static void ImGuiStartFrame(Input *input) {
 	if (!g_FontTexture) {
 		ImGuiCreateDeviceObjects();
 	}
@@ -156,7 +156,7 @@ static void ImGuiStartFrame(Game *game, Input *input) {
 	io.KeyAlt = false;
 	io.KeySuper = false;
 
-	io.DeltaTime = game->deltaT;
+	io.DeltaTime = input->deltaT;
 	io.MouseWheel = 0;
 
 	ImGui::NewFrame();
@@ -180,36 +180,47 @@ static void CreateGlTextureFromImage(const char *fileName, GLuint glTextureID) {
 	unsigned char* img = 0;
 	glBindTexture(GL_TEXTURE_2D, glTextureID);
 	img = stbi_load(fileName, &width, &height, &comp, 0);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	stbi_image_free(img);
 }
 
-Game *FactionInit(int windowPixelWidth, int windowPixelHeight) {
-	Game *gameState = new Game;
-	memset(gameState, 0, sizeof(Game));
+Game *FactionInit(float windowPixelWidth, float windowPixelHeight) {
+	Game *game = new Game;
+	memset(game, 0, sizeof(Game));
 
 	ImGuiInit();
 
-	glGenTextures(textureID_Count, gameState->textures);
-	CreateGlTextureFromImage("../resources/cobble.png", gameState->textures[textureID_Cobble]);
-	CreateGlTextureFromImage("../resources/wood.png", gameState->textures[textureID_Wood]);
-	CreateGlTextureFromImage("../resources/pumpkin.png", gameState->textures[textureID_Pumpkin]);
+	glGenTextures(textureID_Count, game->textures);
+	CreateGlTextureFromImage("../resources/cobble.png", game->textures[textureID_Cobble]);
+	CreateGlTextureFromImage("../resources/wood.png", game->textures[textureID_Wood]);
+	CreateGlTextureFromImage("../resources/pumpkin.png", game->textures[textureID_Pumpkin]);
+	CreateGlTextureFromImage("../resources/pumpkin_body.png", game->textures[textureID_PumpkinBody]);
+	CreateGlTextureFromImage("../resources/melon.png", game->textures[textureID_Melon]);
 
-	glOrtho(0.0, windowPixelWidth, windowPixelHeight, 0.0, -1, 1);
+	game->playerPos = {3, 3};
+	game->tileSizePx = 80;
+	game->tileSizeMetres = 1.2f;
 
-	return gameState;
+	game->player.bounds.pos = {3, 3};
+	game->player.flags = enitityFlags_IsCreature | enitityFlags_HasCollision;
+	game->player.textureID = textureID_Pumpkin;
+
+	return game;
 }
 
 void FactionShutdown(Game *game) {
 	ImGuiShutdown();
 }
 
-static void DrawTexturedRectangle(Game *gameState, int textureID, float x, float y, float width, float height) {
-	glBindTexture(GL_TEXTURE_2D, gameState->textures[textureID]);
+static void DrawTexturedRectangle(Game *game, int textureID, float x, float y, float width, float height) {
+	glBindTexture(GL_TEXTURE_2D, game->textures[textureID]);
 
 	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
 	// glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
    
 	glBegin(GL_QUADS);
@@ -231,102 +242,131 @@ static void DrawTexturedRectangle(Game *gameState, int textureID, float x, float
 	glDisable(GL_TEXTURE_2D);
 }
 
+static void DrawBlobMan(Game *game, int headTextureID, int bodyTextureID, float x, float y, float sectionW, float sectionH) {
+	DrawTexturedRectangle(game, bodyTextureID, x, y, sectionW, sectionH);
+	DrawTexturedRectangle(game, textureID_Pumpkin, x, y - sectionH, sectionW, sectionH);
+}
+
 static bool IsKeyDown(Input *input, int keyID) {
 	return input->keysDown[input->keyMap[keyID]];
 }
 
+static float MetresToPixels(Game *game, float value) {
+	return value * (game->tileSizePx / game->tileSizeMetres);
+}
+
+static bool IsPointEmpty(Game *game, Vec2 pos) {
+	int tileX = (int)(pos.x / game->tileSizeMetres);
+	int tileY = (int)(pos.y / game->tileSizeMetres);
+	return world[tileY][tileX] == 0;
+}
+
 void GameRenderAndUpdate(Game *game, Input *input) {
 	glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
+
 	glClear(GL_COLOR_BUFFER_BIT);
 	glViewport(0, 0, (GLint)input->windowWidth, (GLint)input->windowHeight);
 
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+	glOrtho(0.0, input->windowWidth, input->windowHeight, 0.0, -1, 1);	
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
 
+	float playerSpeedMetreSec = 5;
+
+	Vec2 newPos = game->playerPos;
 	if (IsKeyDown(input, keyCode_W)) {
-		game->playerPos.y -= 200 * game->deltaT;
+		newPos.y -= playerSpeedMetreSec * input->deltaT;
 	}
 	if (IsKeyDown(input, keyCode_S)) {
-		game->playerPos.y += 200 * game->deltaT;
+		newPos.y += playerSpeedMetreSec * input->deltaT;
 	}
 
-	if (IsKeyDown(input, keyCode_A)) {
-		game->playerPos.x -= 200 * game->deltaT;
-	}
 	if (IsKeyDown(input, keyCode_D)) {
-		game->playerPos.x += 200 * game->deltaT;
+		newPos.x += playerSpeedMetreSec * input->deltaT;
+	}
+	if (IsKeyDown(input, keyCode_A)) {
+		newPos.x -= playerSpeedMetreSec * input->deltaT;
 	}
 
-	#define WORLD_WIDTH 30
-	#define WORLD_HEIGHT 14
-	static int world[WORLD_HEIGHT][WORLD_WIDTH] = {
-		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-		{1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-		{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
-	};
+	if (input->scroll) {
+		game->tileSizePx += input->scroll;
+	}
 
+	if (newPos != game->playerPos) {
 
-	float tileSize = 100;
-	int cameraTileWidth = 6;
-	int cameraTileHeight = 6;
-	float cameraWidth = cameraTileWidth * tileSize;
-	float cameraHeight = cameraTileHeight * tileSize;
+		Vec2 newPlayerLeft = newPos;
+		Vec2 newPlayerRight = newPos;
+		newPlayerLeft.x -= PLAYER_WIDTH / 2;
+		newPlayerRight.x += PLAYER_WIDTH / 2;
 
-	game->cameraPos.x = Max(game->playerPos.x - (cameraWidth / 2), 0);
-	game->cameraPos.y = Max(game->playerPos.y - (cameraHeight / 2), 0);
+		Vec2 newPlayerTopLeft = newPlayerLeft;
+		Vec2 newPlayerTopRight = newPlayerRight;
+		newPlayerTopLeft.y -= PLAYER_HEIGHT / 2;
+		newPlayerTopRight.y -= PLAYER_HEIGHT / 2;
 
-	// clamp the camera so it always fits in the world
+		if (IsPointEmpty(game, newPlayerRight) && IsPointEmpty(game, newPos) &&
+		    IsPointEmpty(game, newPlayerTopRight) && IsPointEmpty(game, newPlayerLeft)) {
+			game->playerPos = newPos;
+		}
+	}
+
+	float windowTileWidth = input->windowWidth / game->tileSizePx;
+	float windowTileHeight = input->windowHeight / game->tileSizePx;
+	int cameraVisibleTilesX = (int)ceilf(windowTileWidth);
+	int cameraVisibleTilesY = (int)ceilf(windowTileHeight);
+
+	float cameraWidthMetres = windowTileWidth * game->tileSizeMetres;
+	float cameraHeightMetres = windowTileHeight * game->tileSizeMetres;
+
+	game->cameraPos.x = Max(game->playerPos.x - (cameraWidthMetres / 2), 0);
+	game->cameraPos.y = Max(game->playerPos.y - (cameraHeightMetres / 2), 0);
+
 	MaxVec2(game->cameraPos, Vec2(0, 0));
-	// Vec2 cameraBottomRightPos = game->cameraPos + Vec2(cameraWidth, cameraHeight);
-	Vec2 worldSize = Vec2(WORLD_WIDTH, WORLD_HEIGHT) * tileSize;
-	if (game->cameraPos.x + cameraWidth > worldSize.x) {
-		game->cameraPos.x = worldSize.x - cameraWidth;
+	Vec2 worldSize = Vec2(WORLD_WIDTH, WORLD_HEIGHT) * game->tileSizeMetres;
+	if (game->cameraPos.x + cameraWidthMetres > worldSize.x) {
+		game->cameraPos.x = worldSize.x - cameraWidthMetres;
 	}
-	if (game->cameraPos.y + cameraHeight > worldSize.y) {
-		game->cameraPos.y = worldSize.y - cameraHeight;
+	if (game->cameraPos.y + cameraHeightMetres > worldSize.y) {
+		game->cameraPos.y = worldSize.y - cameraHeightMetres;
 	}
 
-	int tileNumX = (int)(game->cameraPos.x / tileSize);
-	int tileNumY = (int)(game->cameraPos.y / tileSize);
-	float offsetX = fmodf(game->cameraPos.x, tileSize);
-	float offsetY = fmodf(game->cameraPos.y, tileSize);
-
-	glEnable(GL_SCISSOR_TEST);
-	int scissorHeight = (int)(cameraTileHeight * tileSize);
-	glScissor(0, (int)(input->windowHeight - scissorHeight), (GLsizei)(cameraTileWidth * tileSize), (GLsizei)(scissorHeight));
-	for (int y = 0; y < cameraTileHeight + 2; ++y) {
-		for (int x = 0; x < cameraTileWidth + 2; ++x) {
+	int tileNumX = (int)(game->cameraPos.x / game->tileSizeMetres);
+	int tileNumY = (int)(game->cameraPos.y / game->tileSizeMetres);
+	float offsetX = fmodf(game->cameraPos.x, game->tileSizeMetres);
+	float offsetY = fmodf(game->cameraPos.y, game->tileSizeMetres);
+	for (int y = 0; y < cameraVisibleTilesY + 2; ++y) {
+		for (int x = 0; x < cameraVisibleTilesX + 2; ++x) {
 			int tileX = x + tileNumX;
 			int tileY = y + tileNumY;
 			if (tileX >= 0 && tileX < WORLD_WIDTH &&
 			    tileY >= 0 && tileY < WORLD_HEIGHT) {
-				float xPos = x * tileSize - offsetX;
-				float yPos = y * tileSize - offsetY;
-				DrawTexturedRectangle(game, world[tileY][tileX], xPos, yPos, tileSize, tileSize);							
+				float xPosPx = MetresToPixels(game, x * game->tileSizeMetres - offsetX);
+				float yPosPx = MetresToPixels(game, y * game->tileSizeMetres - offsetY);
+				DrawTexturedRectangle(game, world[tileY][tileX], xPosPx, yPosPx, game->tileSizePx, game->tileSizePx);
 			}
 		}
 	}
-	glScissor(0, 0, (GLsizei)input->windowWidth, (GLsizei)input->windowHeight);
 
 	Vec2 worldPos = game->cameraPos * -1;
-	DrawTexturedRectangle(game, textureID_Pumpkin, worldPos.x + game->playerPos.x, worldPos.y + game->playerPos.y, tileSize, tileSize);
+	float playerPosPixelsX = MetresToPixels(game, worldPos.x + game->playerPos.x - PLAYER_WIDTH / 2);
+	float playerPosPixelsY = MetresToPixels(game, worldPos.y + game->playerPos.y - PLAYER_HEIGHT);
+	DrawBlobMan(game, textureID_Pumpkin, textureID_PumpkinBody, playerPosPixelsX, playerPosPixelsY, 
+	            MetresToPixels(game, PLAYER_WIDTH), MetresToPixels(game, PLAYER_HEIGHT));
 
-	ImGuiStartFrame(game, input);
+	ImGuiStartFrame(input);
 	ImGui::Text("FPS: %.2f", ImGui::GetIO().Framerate);
 	ImGui::Text("CamOffsetX: %.2f", offsetX);
 	ImGui::Text("CamOffsetY: %.2f", offsetY);
-	ImGui::Text("CamTileX: %d", tileNumX);
-	ImGui::Text("CamTileY: %d", tileNumX);
-	ImGui::Text("PlayerPosX: %.2f", game->playerPos.x);
-	ImGui::Text("PlayerPosY: %.2f", game->playerPos.y);
+	ImGui::Text("PlayerPos: (%.2f, %.2f)", game->playerPos.x, game->playerPos.y);
+	ImGui::Text("TilePX: %.2f", game->tileSizePx);
 	ImGuiEndFrame();
 }
+
+
+
+
+
