@@ -194,7 +194,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, 
             LARGE_INTEGER endingTime = Win32GetWallClock();
             float elapsedSeconds = Win32GetSecondsElapsed(startingTime, endingTime);
 
-            float targetFramesPerSec = 30.0f;
+            float targetFramesPerSec = 60.0f;
             float targetSeconds = 1.0f / targetFramesPerSec;
             float secondsToWait = targetSeconds - elapsedSeconds;
             if (secondsToWait > 0) {

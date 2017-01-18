@@ -7,6 +7,7 @@
 #include "imgui/imgui.h"
 
 #include <math.h>
+#include <time.h>
 
 //
 // ImGui
@@ -306,6 +307,41 @@ static bool IsPointEmpty(Game *game, Vec2 pos) {
 	return world[tileY][tileX] == 0;
 }
 
+static void IncrementSpriteAnim(Input *input, AnimatedSprite *sprite, float timeInSecondsForWholeAnim) {
+	float timePerFrame = timeInSecondsForWholeAnim / sprite->numFrames;
+	float amountToInc = (1.0f / timePerFrame) * input->deltaT;
+	sprite->animPos += amountToInc;
+	if (sprite->animPos > sprite->numFrames) {
+		sprite->animPos = 0;
+	}
+}
+
+static bool IsHorizLineEmpty(Game *game, float x1, float x2, float y) {
+	float testPoint = x1;
+	int tileY = (int)(y / game->tileSizeMetres); 
+	while (testPoint < x2) {
+		int tileX = (int)(x1 / game->tileSizeMetres);
+		if (world[tileY][tileX] == 1) {
+			return false;
+		}
+		testPoint += game->tileSizeMetres;
+	}
+	return true;
+}
+
+static bool IsVertLineEmpty(Game *game, float y1, float y2, float x) {
+	float testPoint = y1;
+	int tileX = (int)(x / game->tileSizeMetres); 
+	while (testPoint < y2) {
+		int tileY = (int)(y1 / game->tileSizeMetres);
+		if (world[tileY][tileX] == 1) {
+			return false;
+		}
+		testPoint += game->tileSizeMetres;
+	}
+	return true;
+}
+
 void GameRenderAndUpdate(Game *game, Input *input) {
 	glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
@@ -325,7 +361,8 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	glLoadIdentity();
 
 	bool playerMoved = false;
-	{ // > Handle Input
+	// > Handle Input
+	{ 
 		Vec2 newPos = game->playerPos;
 		if (IsKeyDown(input, keyCode_W)) {
 			newPos.y -= PLAYER_SPEED_MS * input->deltaT;
@@ -340,6 +377,24 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 		if (IsKeyDown(input, keyCode_A)) {
 			newPos.x -= PLAYER_SPEED_MS * input->deltaT;
 		}
+
+		// if (yChange != 0 || xChange != 0) {
+		// 	Vec2 newPlayerPos = {game->playerPos.x + xChange, game->playerPos.y + yChange};
+
+		// 	Vec2 newPlayerCollisionBoxMin = {newPlayerPos.x - PLAYER_WIDTH / 2, newPlayerPos.y - PLAYER_HEIGHT / 2};
+		// 	Vec2 newPlayerCollisionBoxMax = {newPlayerPos.x + PLAYER_WIDTH / 2, newPlayerPos.y};
+
+		// 	if (IsHorizLineEmpty(game, newPlayerCollisionBoxMin.x, newPlayerCollisionBoxMax.x, newPlayerCollisionBoxMin.y) &&
+		// 	    IsHorizLineEmpty(game, newPlayerCollisionBoxMin.x, newPlayerCollisionBoxMax.x, newPlayerCollisionBoxMax.y)) {
+		// 		game->playerPos.x = newPlayerPos.x;
+		// 		playerMoved = true;
+		// 	}
+		// 	if (IsVertLineEmpty(game, newPlayerCollisionBoxMin.y, newPlayerCollisionBoxMax.y, newPlayerCollisionBoxMin.x) &&
+		// 	    IsVertLineEmpty(game, newPlayerCollisionBoxMin.y, newPlayerCollisionBoxMax.y, newPlayerCollisionBoxMax.x)) {
+		// 		game->playerPos.y = newPlayerPos.y;
+		// 		playerMoved = true;			
+		// 	}
+		// }
 
 		if (input->scroll) {
 			game->tileSizePx += input->scroll;
@@ -375,9 +430,17 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 
 	game->cameraPos.x = Max(game->playerPos.x - (cameraWidthMetres / 2), 0);
 	game->cameraPos.y = Max(game->playerPos.y - (cameraHeightMetres / 2), 0);
+	MaxVec2(game->cameraPos, Vec2(0, 0));
+	Vec2 worldSize = Vec2(WORLD_WIDTH, WORLD_HEIGHT) * game->tileSizeMetres;
+	if (game->cameraPos.x + cameraWidthMetres > worldSize.x) {
+		game->cameraPos.x = worldSize.x - cameraWidthMetres;
+	}
+	if (game->cameraPos.y + cameraHeightMetres > worldSize.y) {
+		game->cameraPos.y = worldSize.y - cameraHeightMetres;
+	}
 
-	float cursorInWorldX = (PixelsToMetres(game, input->cursorPos.x)) + game->cameraPos.x;
-	float cursorInWorldY = (PixelsToMetres(game, input->cursorPos.y)) + game->cameraPos.y;
+	float cursorInWorldX = PixelsToMetres(game, input->cursorPos.x) + game->cameraPos.x;
+	float cursorInWorldY = PixelsToMetres(game, input->cursorPos.y) + game->cameraPos.y;
 
 	// > Create Projectiles
 	if (input->mouseState[0]) {
@@ -389,24 +452,18 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 		}
 		if (proj) {
 			proj->isActive = true;
-			proj->pos = game->playerPos;
-			float changeInY = cursorInWorldY - game->playerPos.y;
+			proj->pos.x = game->playerPos.x;
+			proj->pos.y = game->playerPos.y - PLAYER_HEIGHT * 0.5f;
+			float changeInY = cursorInWorldY - (game->playerPos.y - PLAYER_HEIGHT * 0.5f);
 			float changeInX = cursorInWorldX - game->playerPos.x;
 			proj->angle = atanf(changeInY / changeInX);
 			if (changeInX < 0) {
 				proj->angle += M_PI;
 			}
-			proj->speedMS = 20.0f;
+			srand((unsigned int)proj);
+			auto randOffset = rand() % 100;
+			proj->speedMS = 20.0f + (randOffset / 40.0f); // 20 metres per second ish
 		}
-	}
-
-	MaxVec2(game->cameraPos, Vec2(0, 0));
-	Vec2 worldSize = Vec2(WORLD_WIDTH, WORLD_HEIGHT) * game->tileSizeMetres;
-	if (game->cameraPos.x + cameraWidthMetres > worldSize.x) {
-		game->cameraPos.x = worldSize.x - cameraWidthMetres;
-	}
-	if (game->cameraPos.y + cameraHeightMetres > worldSize.y) {
-		game->cameraPos.y = worldSize.y - cameraHeightMetres;
 	}
 
 	// > Draw Tiles
@@ -463,16 +520,16 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	// > Draw Player
 	float playerPosPixelsX = MetresToPixels(game, worldPos.x + game->playerPos.x - PLAYER_WIDTH / 2);
 	float playerPosPixelsY = MetresToPixels(game, worldPos.y + game->playerPos.y - PLAYER_HEIGHT);
+
+	// auto startPoint = ImVec2(MetresToPixels(game, worldPos.x + game->playerPos.x), 
+	//                          MetresToPixels(game, worldPos.y + game->playerPos.y));
+	// imguiDrawList->AddRect(startPoint, ImVec2(startPoint.x + 5, startPoint.y + 5), 0xff0000ff);
+
 	if (playerMoved) {
-		float animEachFrameSpeedSeconds = 10.f;
-		game->playerSprite.animPos += animEachFrameSpeedSeconds * input->deltaT;
-		if (game->playerSprite.animPos > game->playerSprite.numFrames) {
-			game->playerSprite.animPos = 0;
-		}
+		IncrementSpriteAnim(input, &game->playerSprite, 0.2f);
 	}
 	DrawAnimatedSprite(game, &game->playerSprite, playerPosPixelsX, playerPosPixelsY, 
 	                   MetresToPixels(game, PLAYER_WIDTH), MetresToPixels(game, PLAYER_HEIGHT));
-
 
 	glMatrixMode(GL_MODELVIEW);
 	glPopMatrix();
@@ -482,16 +539,10 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	imguiDrawList->PopClipRect();
 	if (ImGui::Button("Tile Outlines")) game->debug_TileOutlines = !game->debug_TileOutlines;
 	ImGui::Text("FPS: %.2f", ImGui::GetIO().Framerate);
-	ImGui::Text("CamOffsetX: %.2f", offsetX);
-	ImGui::Text("CamOffsetY: %.2f", offsetY);
-	ImGui::Text("AnimPos: %.2f", game->playerSprite.animPos);
+	ImGui::Text("Camera: (%.2f, %.2f)", game->cameraPos.x, game->cameraPos.y);
 	ImGui::Text("CursorPosM: (%.2f, %.2f)", cursorInWorldX, cursorInWorldY);
 	ImGui::Text("PlayerPos: (%.2f, %.2f)", game->playerPos.x, game->playerPos.y);
 	ImGui::Text("TilePX: %.2f", game->tileSizePx);
 	ImGuiEndFrame();
 }
-
-
-
-
 
