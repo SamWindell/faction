@@ -61,7 +61,6 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
     if (win32Layer == NULL) {
         return DefWindowProcA(window, message, wParam, lParam);
     }
-    win32Layer->input.scroll = 0;
 
     LRESULT result = 0;
     switch (message) {

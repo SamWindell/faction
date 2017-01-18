@@ -325,43 +325,44 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	glLoadIdentity();
 
 	bool playerMoved = false;
-	Vec2 newPos = game->playerPos;
-	if (IsKeyDown(input, keyCode_W)) {
-		newPos.y -= PLAYER_SPEED_MS * input->deltaT;
-	}
-	if (IsKeyDown(input, keyCode_S)) {
-		newPos.y += PLAYER_SPEED_MS * input->deltaT;
-	}
+	{ // > Handle Input
+		Vec2 newPos = game->playerPos;
+		if (IsKeyDown(input, keyCode_W)) {
+			newPos.y -= PLAYER_SPEED_MS * input->deltaT;
+		}
+		if (IsKeyDown(input, keyCode_S)) {
+			newPos.y += PLAYER_SPEED_MS * input->deltaT;
+		}
 
-	if (IsKeyDown(input, keyCode_D)) {
-		newPos.x += PLAYER_SPEED_MS * input->deltaT;
-	}
-	if (IsKeyDown(input, keyCode_A)) {
-		newPos.x -= PLAYER_SPEED_MS * input->deltaT;
-	}
+		if (IsKeyDown(input, keyCode_D)) {
+			newPos.x += PLAYER_SPEED_MS * input->deltaT;
+		}
+		if (IsKeyDown(input, keyCode_A)) {
+			newPos.x -= PLAYER_SPEED_MS * input->deltaT;
+		}
 
-	if (input->scroll) {
-		game->tileSizePx += input->scroll;
-	}
+		if (input->scroll) {
+			game->tileSizePx += input->scroll;
+		}
 
-	if (newPos != game->playerPos) {
-		playerMoved = true;
-		Vec2 newPlayerLeft = newPos;
-		Vec2 newPlayerRight = newPos;
-		newPlayerLeft.x -= PLAYER_WIDTH / 2;
-		newPlayerRight.x += PLAYER_WIDTH / 2;
+		if (newPos != game->playerPos) {
+			playerMoved = true;
+			Vec2 newPlayerLeft = newPos;
+			Vec2 newPlayerRight = newPos;
+			newPlayerLeft.x -= PLAYER_WIDTH / 2;
+			newPlayerRight.x += PLAYER_WIDTH / 2;
 
-		Vec2 newPlayerTopLeft = newPlayerLeft;
-		Vec2 newPlayerTopRight = newPlayerRight;
-		newPlayerTopLeft.y -= PLAYER_HEIGHT / 2;
-		newPlayerTopRight.y -= PLAYER_HEIGHT / 2;
+			Vec2 newPlayerTopLeft = newPlayerLeft;
+			Vec2 newPlayerTopRight = newPlayerRight;
+			newPlayerTopLeft.y -= PLAYER_HEIGHT / 2;
+			newPlayerTopRight.y -= PLAYER_HEIGHT / 2;
 
-		if (IsPointEmpty(game, newPlayerRight) && IsPointEmpty(game, newPlayerLeft) &&
-		    IsPointEmpty(game, newPlayerTopRight) && IsPointEmpty(game, newPlayerTopLeft)) {
-			game->playerPos = newPos;
+			if (IsPointEmpty(game, newPlayerRight) && IsPointEmpty(game, newPlayerLeft) &&
+			    IsPointEmpty(game, newPlayerTopRight) && IsPointEmpty(game, newPlayerTopLeft)) {
+				game->playerPos = newPos;
+			}
 		}
 	}
-
 
 	// camera
 	float windowTileWidth = input->windowWidth / game->tileSizePx;
@@ -378,20 +379,26 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	float cursorInWorldX = (PixelsToMetres(game, input->cursorPos.x)) + game->cameraPos.x;
 	float cursorInWorldY = (PixelsToMetres(game, input->cursorPos.y)) + game->cameraPos.y;
 
-	// projectiles
-	// if (input->mouseState[0]) {
-	// 	Projectile *proj = NULL;
-	// 	for (int i = 0; i < ArraySize(game->projectiles); ++i) {
-	// 		if (!game->projectiles[i].isActive) {
-	// 			proj = &game->projectiles[i];
-	// 		}
-	// 	}
-	// 	if (proj) {
-	// 		proj->pos = game->playerPos;
-	// 		proj->gradient = (cursorInWorldY - game->playerPos.y) / (cursorInWorldX - game->playerPos.x);
-	// 		proj->yIntercept = cursorInWorldY - proj->gradient * cursorInWorldX;
-	// 	}
-	// }
+	// > Create Projectiles
+	if (input->mouseState[0]) {
+		Projectile *proj = NULL;
+		for (int i = 0; i < ArraySize(game->projectiles); ++i) {
+			if (!game->projectiles[i].isActive) {
+				proj = &game->projectiles[i];
+			}
+		}
+		if (proj) {
+			proj->isActive = true;
+			proj->pos = game->playerPos;
+			float changeInY = cursorInWorldY - game->playerPos.y;
+			float changeInX = cursorInWorldX - game->playerPos.x;
+			proj->angle = atanf(changeInY / changeInX);
+			if (changeInX < 0) {
+				proj->angle += M_PI;
+			}
+			proj->speedMS = 20.0f;
+		}
+	}
 
 	MaxVec2(game->cameraPos, Vec2(0, 0));
 	Vec2 worldSize = Vec2(WORLD_WIDTH, WORLD_HEIGHT) * game->tileSizeMetres;
@@ -402,6 +409,7 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 		game->cameraPos.y = worldSize.y - cameraHeightMetres;
 	}
 
+	// > Draw Tiles
 	int tileNumX = (int)(game->cameraPos.x / game->tileSizeMetres);
 	int tileNumY = (int)(game->cameraPos.y / game->tileSizeMetres);
 	float offsetX = fmodf(game->cameraPos.x, game->tileSizeMetres);
@@ -423,15 +431,36 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 		}
 	}
 
-	// for (int i = 0; i < ArraySize(game->projectiles); ++i) {
-	// 	if (game->projectiles[i].isActive) {
-	// 		game->projectiles[i].pos += 0.1f
-	// 		float newPosX = game->projectiles[i].pos
-
-	// 	}
-	// }
-
 	Vec2 worldPos = game->cameraPos * -1;
+
+	// > Draw Projectiles
+	for (int i = 0; i < ArraySize(game->projectiles); ++i) {
+		if (game->projectiles[i].isActive) {
+
+			float hypotDistance = game->projectiles[i].speedMS * input->deltaT;
+			Vec2 offset;
+			offset.y = sinf(game->projectiles[i].angle) * hypotDistance;
+			offset.x = cosf(game->projectiles[i].angle) * hypotDistance;
+			Vec2 newPos = game->projectiles[i].pos + offset;
+
+			float worldWidthMetres = WORLD_WIDTH * game->tileSizeMetres;
+			float worldHeightMetres = WORLD_HEIGHT * game->tileSizeMetres;
+
+			if (!IsPointEmpty(game, newPos) ||
+			    (newPos.x < 0 || newPos.x > worldWidthMetres ||
+				newPos.y < 0 || newPos.y > worldHeightMetres)) {
+				game->projectiles[i].isActive = false;				
+			} else {
+				game->projectiles[i].pos = newPos;
+				float projSizePx = MetresToPixels(game, 0.2f);
+				float posX = MetresToPixels(game, newPos.x + worldPos.x);
+				float posY = MetresToPixels(game, newPos.y + worldPos.y);
+				DrawTexturedRectangle(game, textureID_Melon, posX, posY, projSizePx, projSizePx);
+			}
+		}
+	}
+
+	// > Draw Player
 	float playerPosPixelsX = MetresToPixels(game, worldPos.x + game->playerPos.x - PLAYER_WIDTH / 2);
 	float playerPosPixelsY = MetresToPixels(game, worldPos.y + game->playerPos.y - PLAYER_HEIGHT);
 	if (playerMoved) {
@@ -441,7 +470,8 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 			game->playerSprite.animPos = 0;
 		}
 	}
-	DrawAnimatedSprite(game, &game->playerSprite, playerPosPixelsX, playerPosPixelsY, MetresToPixels(game, PLAYER_WIDTH), MetresToPixels(game, PLAYER_HEIGHT));
+	DrawAnimatedSprite(game, &game->playerSprite, playerPosPixelsX, playerPosPixelsY, 
+	                   MetresToPixels(game, PLAYER_WIDTH), MetresToPixels(game, PLAYER_HEIGHT));
 
 
 	glMatrixMode(GL_MODELVIEW);

@@ -17,6 +17,10 @@ enum TextureID {
 #define PLAYER_HEIGHT 1.5f
 #define PLAYER_SPEED_MS 5.0f
 
+#ifndef M_PI
+#define M_PI 3.14159265359f
+#endif
+
 #define WORLD_WIDTH 30
 #define WORLD_HEIGHT 14
 static int world[WORLD_HEIGHT][WORLD_WIDTH] = {
@@ -75,11 +79,14 @@ struct AnimatedSprite {
 
 struct Projectile {
 	bool isActive;
-	Vec2 start;
-	Vec2 end;
-	float pos;
-	float gradient;
-	float yIntercept;
+	// Vec2 start;
+	// Vec2 end;
+	Vec2 pos;
+	float angle;
+	// float pos;
+	float speedMS;
+	// float gradient;
+	// float yIntercept;
 };
 
 struct Game {
