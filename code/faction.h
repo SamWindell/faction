@@ -20,6 +20,7 @@ enum TextureID {
 #ifndef M_PI
 #define M_PI 3.14159265359f
 #endif
+#define ROOT_TWO 1.41421356237f
 
 #define WORLD_WIDTH 30
 #define WORLD_HEIGHT 14

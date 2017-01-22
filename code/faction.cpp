@@ -9,6 +9,8 @@
 #include <math.h>
 #include <time.h>
 
+#define USE_IMGUI
+
 //
 // ImGui
 //
@@ -16,6 +18,7 @@
 static GLuint g_FontTexture = 0;
 
 static void ImGuiRenderDrawLists(ImDrawData *draw_data) {
+#ifdef USE_IMGUI
 	// Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
 	ImGuiIO &io = ImGui::GetIO();
 	int fb_width = (int) (io.DisplaySize.x * io.DisplayFramebufferScale.x);
@@ -93,6 +96,7 @@ static void ImGuiRenderDrawLists(ImDrawData *draw_data) {
 	glPopAttrib();
 	glViewport(last_viewport[0], last_viewport[1], (GLsizei) last_viewport[2], (GLsizei) last_viewport[3]);
 	glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei) last_scissor_box[2], (GLsizei) last_scissor_box[3]);
+#endif
 }
 
 static bool ImGuiCreateDeviceObjects() {
@@ -330,7 +334,7 @@ static bool IsHorizLineEmpty(Game *game, float x1, float x2, float y) {
 }
 
 static bool IsVertLineEmpty(Game *game, float y1, float y2, float x) {
-	float testPoint = y1;
+float testPoint = y1;
 	int tileX = (int)(x / game->tileSizeMetres); 
 	while (testPoint < y2) {
 		int tileY = (int)(y1 / game->tileSizeMetres);
@@ -340,6 +344,35 @@ static bool IsVertLineEmpty(Game *game, float y1, float y2, float x) {
 		testPoint += game->tileSizeMetres;
 	}
 	return true;
+}
+
+// type = 0 for horiz, 1 for vert
+static void CheckWallCollision(int type, Vec2 *outRemainingVec, float *minT, float testWall, Vec2 startingPos, Vec2 deltaPos, float min, float max) {
+	int otherType = abs(type - 1);
+	if (deltaPos.e[otherType] != 0) {
+		float intersectionT = (testWall - startingPos.e[otherType]) / deltaPos.e[otherType];
+		Vec2 intersectionPoint = startingPos + intersectionT * deltaPos;
+		if (intersectionT < *minT && intersectionT >= 0) {
+			if (intersectionPoint.e[type] < max && intersectionPoint.e[type] >= min) {
+				*minT = intersectionT;
+
+				// work out the remaining velocity parallel to the wall we have just hit
+				float remainingT = 1 - intersectionT;
+				Vec2 testVec = {};
+				testVec.e[type] = 1; 
+				Vec2 result = {};
+				float dot = DotProduct(testVec, deltaPos);
+				if (dot > 0) { // down or right
+					result = remainingT * testVec;
+				} else if (dot == 0) { // perpendicular, do nothing
+					result = {0, 0};
+				} else { // up or left
+					result = remainingT * testVec * -1;
+				}
+				*outRemainingVec = result;
+			}
+		}
+	}
 }
 
 void GameRenderAndUpdate(Game *game, Input *input) {
@@ -363,19 +396,93 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 	bool playerMoved = false;
 	// > Handle Input
 	{ 
-		Vec2 newPos = game->playerPos;
+		Vec2 deltaPlayerPos = {};
+		bool playerMovedX = false;
+		bool playerMovedY = false;
 		if (IsKeyDown(input, keyCode_W)) {
-			newPos.y -= PLAYER_SPEED_MS * input->deltaT;
+			deltaPlayerPos.y -= 1;
+			playerMovedY = true;
 		}
 		if (IsKeyDown(input, keyCode_S)) {
-			newPos.y += PLAYER_SPEED_MS * input->deltaT;
+			deltaPlayerPos.y += 1;
+			playerMovedY = true;
 		}
 
 		if (IsKeyDown(input, keyCode_D)) {
-			newPos.x += PLAYER_SPEED_MS * input->deltaT;
+			deltaPlayerPos.x += 1;
+			playerMovedX = true;
 		}
 		if (IsKeyDown(input, keyCode_A)) {
-			newPos.x -= PLAYER_SPEED_MS * input->deltaT;
+			deltaPlayerPos.x -= 1;
+			playerMovedX = true;
+		}
+
+		playerMoved = playerMovedX || playerMovedY;
+		if (playerMovedX && playerMovedY) {
+			deltaPlayerPos = Normalise(deltaPlayerPos);
+		}
+		
+		if (playerMoved) {
+			Vec2 oldPlayerPos = game->playerPos;
+			Vec2 newPlayerPos = game->playerPos + deltaPlayerPos * (PLAYER_SPEED_MS * input->deltaT);
+			Vec2 scaledDeltaPlayerPos = deltaPlayerPos * (PLAYER_SPEED_MS * input->deltaT);
+
+			int oldPlayerPosTileX = (int)(oldPlayerPos.x / game->tileSizeMetres);
+			int oldPlayerPosTileY = (int)(oldPlayerPos.y / game->tileSizeMetres);
+			int newPlayerPosTileX = (int)(newPlayerPos.x / game->tileSizeMetres);
+			int newPlayerPosTileY = (int)(newPlayerPos.y / game->tileSizeMetres);
+
+			// loop through all the tile between the players old position and the players new position
+			// usually only going to be like 1 tile, unless the player is going really fast
+			int startingTileX = Min(oldPlayerPosTileX, newPlayerPosTileX);
+			int startingTileY = Min(oldPlayerPosTileY, newPlayerPosTileY);
+			int endingTileX = Max(oldPlayerPosTileX, newPlayerPosTileX) + 1;
+			int endingTileY = Max(oldPlayerPosTileY, newPlayerPosTileY) + 1;
+
+			float minT = 1;
+			Vec2 remainingVelocity = {};
+			for (int yTile = startingTileY; yTile < endingTileY; ++yTile) {
+				for (int xTile = startingTileX; xTile < endingTileX; ++xTile) {
+					if (world[yTile][xTile] == 1) { // there is something in the tile we want to move into
+
+						Vec2 collisionMin = {xTile * game->tileSizeMetres, yTile * game->tileSizeMetres};
+						Vec2 collisionMax = {collisionMin.x + game->tileSizeMetres, collisionMin.y + game->tileSizeMetres};
+
+						CheckWallCollision(1, &remainingVelocity, &minT, collisionMin.x, oldPlayerPos, deltaPlayerPos, 
+						                   collisionMin.y, collisionMax.y);
+						CheckWallCollision(1, &remainingVelocity, &minT, collisionMax.x, oldPlayerPos, deltaPlayerPos, 
+						                   collisionMin.y, collisionMax.y);
+
+						CheckWallCollision(0, &remainingVelocity, &minT, collisionMin.y, oldPlayerPos, deltaPlayerPos, 
+						                   collisionMin.x, collisionMax.x);
+						CheckWallCollision(0, &remainingVelocity, &minT, collisionMax.y, oldPlayerPos, deltaPlayerPos, 
+						                   collisionMin.x, collisionMax.x);
+
+					}
+				}
+			}
+
+			if (minT != 1) {
+				float remainingT = 1 - minT;
+				newPlayerPos = oldPlayerPos + minT * (scaledDeltaPlayerPos);
+				newPlayerPos += remainingVelocity * (PLAYER_SPEED_MS * input->deltaT);
+			}
+			game->playerPos = newPlayerPos;
+
+			// if (world[newPlayerPosTileX][newPlayerPosTileY] == 1) { // there is something in the tile we want to move into
+
+			// 	// collision box of the tile (just the size of a tile at the moment)
+			// 	Vec2 topLeft = {newPlayerPosTileX * game->tileSizeMetres, newPlayerPosTileY * game->tileSizeMetres};
+			// 	Vec2 topRight = {topLeft.x + game->tileSizeMetres, topLeft.y};
+			// 	Vec2 bottomRight = {topRight.x, topLeft.y + game->tileSizeMetres};
+			// 	Vec2 bottomLeft = {topLeft.x, bottomRight.y};
+
+			// 	Vec2 newPlayerCollisionBoxMin = {newPlayerPos.x - PLAYER_WIDTH / 2, newPlayerPos.y - PLAYER_HEIGHT / 2};
+			// 	Vec2 newPlayerCollisionBoxMax = {newPlayerPos.x + PLAYER_WIDTH / 2, newPlayerPos.y};
+
+			// }
+
+			// game->playerPos += deltaPlayerPos * (PLAYER_SPEED_MS * input->deltaT);
 		}
 
 		// if (yChange != 0 || xChange != 0) {
@@ -400,23 +507,23 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 			game->tileSizePx += input->scroll;
 		}
 
-		if (newPos != game->playerPos) {
-			playerMoved = true;
-			Vec2 newPlayerLeft = newPos;
-			Vec2 newPlayerRight = newPos;
-			newPlayerLeft.x -= PLAYER_WIDTH / 2;
-			newPlayerRight.x += PLAYER_WIDTH / 2;
+		// if (newPos != game->playerPos) {
+		// 	playerMoved = true;
+		// 	Vec2 newPlayerLeft = newPos;
+		// 	Vec2 newPlayerRight = newPos;
+		// 	newPlayerLeft.x -= PLAYER_WIDTH / 2;
+		// 	newPlayerRight.x += PLAYER_WIDTH / 2;
 
-			Vec2 newPlayerTopLeft = newPlayerLeft;
-			Vec2 newPlayerTopRight = newPlayerRight;
-			newPlayerTopLeft.y -= PLAYER_HEIGHT / 2;
-			newPlayerTopRight.y -= PLAYER_HEIGHT / 2;
+		// 	Vec2 newPlayerTopLeft = newPlayerLeft;
+		// 	Vec2 newPlayerTopRight = newPlayerRight;
+		// 	newPlayerTopLeft.y -= PLAYER_HEIGHT / 2;
+		// 	newPlayerTopRight.y -= PLAYER_HEIGHT / 2;
 
-			if (IsPointEmpty(game, newPlayerRight) && IsPointEmpty(game, newPlayerLeft) &&
-			    IsPointEmpty(game, newPlayerTopRight) && IsPointEmpty(game, newPlayerTopLeft)) {
-				game->playerPos = newPos;
-			}
-		}
+		// 	if (IsPointEmpty(game, newPlayerRight) && IsPointEmpty(game, newPlayerLeft) &&
+		// 	    IsPointEmpty(game, newPlayerTopRight) && IsPointEmpty(game, newPlayerTopLeft)) {
+		// 		game->playerPos = newPos;
+		// 	}
+		// }
 	}
 
 	// camera
@@ -481,8 +588,8 @@ void GameRenderAndUpdate(Game *game, Input *input) {
 				float yPosPx = MetresToPixels(game, y * game->tileSizeMetres - offsetY);
 				DrawTexturedRectangle(game, world[tileY][tileX], xPosPx, yPosPx, game->tileSizePx, game->tileSizePx);
 				if (game->debug_TileOutlines) {
-					imguiDrawList->AddRect(ImVec2(xPosPx, yPosPx), ImVec2(xPosPx + game->tileSizePx, yPosPx + game->tileSizePx),
-										   0xff0000ff);
+					// imguiDrawList->AddRect(ImVec2(xPosPx, yPosPx), ImVec2(xPosPx + game->tileSizePx, yPosPx + game->tileSizePx),
+										   // 0xff0000ff);
 				}
 			}
 		}
